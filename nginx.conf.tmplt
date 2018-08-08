@@ -1,0 +1,115 @@
+user  nginx;
+
+pid        /var/run/nginx.pid;
+
+worker_processes 2;
+
+worker_rlimit_nofile 523264;
+
+worker_shutdown_timeout 10s;
+
+events {
+    multi_accept        on;
+    worker_connections  16384;
+    use                 epoll;
+}
+
+http {
+    vhost_traffic_status_zone;
+
+    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+
+    aio                 threads;
+    aio_write           on;
+    
+    tcp_nopush          on;
+    tcp_nodelay         on;
+    
+    log_subrequest      on;
+    
+    reset_timedout_connection on;
+    
+    keepalive_timeout  75s;
+    keepalive_requests 100;
+    
+    client_body_temp_path           /tmp/client-body;
+    fastcgi_temp_path               /tmp/fastcgi-temp;
+    proxy_temp_path                 /tmp/proxy-temp;
+    
+    client_header_buffer_size       1k;
+    client_header_timeout           60s;
+    large_client_header_buffers     4 8k;
+    client_body_buffer_size         8k;
+    client_body_timeout             60s;
+    
+    http2_max_field_size            4k;
+    http2_max_header_size           16k;
+    
+    types_hash_max_size             2048;
+    server_names_hash_max_size      1024;
+    server_names_hash_bucket_size   64;
+    map_hash_bucket_size            64;
+    
+    proxy_headers_hash_max_size     512;
+    proxy_headers_hash_bucket_size  64;
+    
+    variables_hash_bucket_size      128;
+    variables_hash_max_size         2048;
+    
+    underscores_in_headers          off;
+    ignore_invalid_headers          on;
+    
+    limit_req_status                503;
+    
+    include /etc/nginx/mime.types;
+    default_type text/html;
+    
+    gzip on;
+    gzip_comp_level 5;
+    gzip_http_version 1.1;
+    gzip_min_length 256;
+    gzip_types application/atom+xml application/javascript application/x-javascript application/json application/rss+xml application/vnd.ms-fontobject application/x-font-ttf application/x-web-app-manifest+json application/xhtml+xml application/xml font/opentype image/svg+xml image/x-icon text/css text/plain text/x-component;
+    gzip_proxied any;
+    gzip_vary on;
+
+    server_tokens on;
+
+    access_log /var/log/nginx/access.log main;
+    error_log  /var/log/nginx/error.log notice;
+
+    # default server, used for NGINX healthcheck and access to nginx stats
+    server {
+        server_name _;
+
+        listen $METRICS_PORT default_server;
+        listen [::]:$METRICS_PORT default_server;
+        
+        location /health {
+            access_log off;
+            return 200;
+        }
+
+        location /status {
+            access_log off;
+            vhost_traffic_status_display;
+            vhost_traffic_status_display_format html;
+        }
+
+        location /nginx_status {
+            access_log off;
+            stub_status on;
+        }        
+    }
+
+    include /etc/nginx/conf.d/*.conf;
+}
+
+stream {
+    log_format log_stream [$time_local] $protocol $status $bytes_sent $bytes_received $session_time;
+    
+    access_log /var/log/nginx/access.log log_stream;
+    
+    error_log  /var/log/nginx/error.log;
+}
